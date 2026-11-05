@@ -107,7 +107,9 @@ COPY docker/fish/config.fish /root/.config/fish/config.fish
 # ---------------------------------------------------------------------------
 COPY docker/nginx/default.conf /etc/nginx/app.conf.template
 COPY docker/php/php.ini /usr/local/etc/php/conf.d/zz-app.ini
-COPY docker/php/www.conf /usr/local/etc/php-fpm.d/zz-app.conf
+# zzz-, bukan zz-: harus dimuat setelah zz-docker.conf bawaan image (yang
+# listen di semua interface), supaya `listen = 127.0.0.1:9000` di sini menang.
+COPY docker/php/www.conf /usr/local/etc/php-fpm.d/zzz-app.conf
 COPY docker/supervisor/supervisord.conf /etc/supervisor/conf.d/app.conf
 COPY docker/sshd/sshd_config.conf /etc/ssh/sshd_config.d/app.conf
 COPY docker/env.sh /usr/local/lib/app-env.sh
