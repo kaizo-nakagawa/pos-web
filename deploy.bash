@@ -8,43 +8,20 @@ set -euo pipefail
 
 cd "$(dirname "$0")"
 
+# Container-nya adalah image dari Dockerfile repo ini: tanpa kode, hanya
+# toolchain dan layanan (lihat catatan di akhir Dockerfile).
+
 # Alamat SSH container (user@host, atau alias Host dari ~/.ssh/config):
 # DEPLOY_REMOTE dari environment -- mis. `DEPLOY_REMOTE=... ./deploy.bash`
 # untuk container staging -- atau dari .env mesin ini. Dibaca dengan parser
-# kecil di bawah, bukan dengan `source`, yang akan menjalankan .env sebagai
-# kode shell. Periksa baik-baik: alamat yang salah akan menyinkronkan kode ini
+# yang dipakai container untuk .env-nya (docker/env.sh), bukan dengan
+# `source`, yang akan menjalankan .env sebagai kode shell.
+# Periksa baik-baik: alamat yang salah akan menyinkronkan kode ini
 # ke container aplikasi lain dan menghapus apa pun yang berbeda.
 APP_ENV_FILE=.env
-
-# Cetak nilai satu key dari .env; gagal bila file atau key tidak ada.
-# Mendukung KEY=value, KEY="value", KEY='value', `export` opsional, dan
-# komentar ` # ...` setelah nilai tanpa kutip. Bukan parser dotenv lengkap.
-env_value() {
-    local key=$1 line value
-
-    [ -r "$APP_ENV_FILE" ] || return 1
-    line=$(grep -E "^[[:space:]]*(export[[:space:]]+)?${key}[[:space:]]*=" "$APP_ENV_FILE" | tail -n 1) || return 1
-    [ -n "$line" ] || return 1
-
-    value=${line#*=}
-    value=${value#"${value%%[![:space:]]*}"}
-
-    case $value in
-        \"*) value=${value#\"}; value=${value%%\"*} ;;
-        \'*) value=${value#\'}; value=${value%%\'*} ;;
-        *)
-            value=${value%%[[:space:]]#*}
-            value=${value%"${value##*[![:space:]]}"}
-            ;;
-    esac
-
-    printf '%s' "$value"
-}
-
-# Variabel yang sudah ada di environment menang atas .env.
-if [ -z "${DEPLOY_REMOTE:-}" ]; then
-    DEPLOY_REMOTE=$(env_value DEPLOY_REMOTE || true)
-fi
+# shellcheck source=docker/env.sh
+source docker/env.sh
+load_env DEPLOY_REMOTE
 
 if [ -z "${DEPLOY_REMOTE:-}" ]; then
     echo 'DEPLOY_REMOTE belum diset -- tambahkan ke .env (lihat .env.example), atau berikan lewat environment.' >&2
@@ -204,15 +181,19 @@ fi
 
 # Dicek sebelum apa pun di server berubah: tool yang hilang di sisi sana
 # kalau tidak akan ketahuan di tengah jalan, dengan kode baru tanpa dependensi.
+# Yang membuktikan ini container yang benar adalah file yang hanya dimiliki
+# image ini, bukan public/index.php aplikasi -- yang belum ada pada deploy
+# pertama ke container kosong.
 if ! remote <<'EOF'
 set -euo pipefail
 command -v rsync >/dev/null
 command -v composer >/dev/null
 command -v php >/dev/null
+test -f /usr/local/lib/app-env.sh
 test -d "$REMOTE_PATH"
 EOF
 then
-    echo "Container salah, atau rsync/composer/php tidak ada di sana, atau $REMOTE_PATH tidak ada -- periksa DEPLOY_REMOTE." >&2
+    echo "Bukan container aplikasi ini, atau rsync/composer/php tidak ada di sana -- periksa DEPLOY_REMOTE, atau build ulang image." >&2
     exit 1
 fi
 
@@ -277,7 +258,6 @@ if [ "$ASSETS_ONLY" = false ]; then
 set -euo pipefail
 cd "$REMOTE_PATH"
 php artisan migrate --force
-php artisan storage:link 2>/dev/null || true
 php artisan optimize
 php artisan queue:restart
 EOF

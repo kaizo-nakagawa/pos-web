@@ -1,0 +1,5 @@
+# Image runtime tidak menyalin apa pun dari repository kecuali docker/ --
+# kodenya datang lewat deploy.bash melalui SSH. Whitelist, supaya .env, vendor/,
+# node_modules/ atau database lokal tidak pernah ikut ke build context.
+*
+!docker/
